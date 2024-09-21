@@ -3,12 +3,19 @@ package com.morpembot.MorphemBot.service;
 import com.morpembot.MorphemBot.config.BotConfig;
 import com.morpembot.MorphemBot.dataBase.User;
 import com.morpembot.MorphemBot.dataBase.UserRepository;
+import com.morpembot.MorphemBot.dataBase.Word;
+import com.morpembot.MorphemBot.dataBase.WordRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.Update;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import static com.morpembot.MorphemBot.config.BotCommandText.*;
 
@@ -16,7 +23,9 @@ import static com.morpembot.MorphemBot.config.BotCommandText.*;
 public class TelegramBot extends TelegramLongPollingBot {
     @Autowired
     private UserRepository userRepository;
-    final BotConfig config;
+    @Autowired
+    private WordRepository wordRepository;
+    private final BotConfig config;
 
     public TelegramBot(BotConfig config) {
         this.config = config;
@@ -27,20 +36,31 @@ public class TelegramBot extends TelegramLongPollingBot {
 
         if(update.hasMessage()&&update.getMessage().hasText()) {
             String messageText = update.getMessage().getText();
+            if(!userRepository.existsById(chatId)||userRepository.existsById(chatId)&&!userRepository.findByUserId(chatId).isParseCheck()) {
 
-            switch (messageText) {
-                case "/start":
-                    startCommand(chatId);
-                    break;
-                case "/help":
-                    helpCommand(chatId);
-                    break;
-                case "/parse":
-                    parseCommand(chatId);
-                    break;
-                default:
-                    sendMessage(chatId, UNKNOWN_TEXT);
-                    break;
+                switch (messageText) {
+                    case "/start":
+                        startCommand(chatId);
+                        break;
+                    case "/help":
+                        helpCommand(chatId);
+                        break;
+                    case "/parse":
+                        parseCommand(chatId);
+                        break;
+                    case "/cancel":
+                        sendMessage(chatId, CANCEL_NOT_DURING_PARSE);
+                        break;
+                    default:
+                        sendMessage(chatId, UNKNOWN_TEXT);
+                        break;
+                }
+            } else {
+                if (messageText.equals("/cancel")) {
+                    cancelCommand(chatId);
+                } else {
+                    findWordByEntered(chatId, messageText);
+                }
             }
         }
     }
@@ -64,15 +84,55 @@ public class TelegramBot extends TelegramLongPollingBot {
     }
 
     private void parseCommand(long chatId) {
-        User user = userRepository.findByUserId(chatId);
-        user.setParseCheck(true);
+        saveParseCheck(chatId, true);
         sendMessage(chatId, PARSE_TEXT);
+    }
+
+    private void cancelCommand(long chatId) {
+        saveParseCheck(chatId, false);
+        sendMessage(chatId, CANCEL_TEXT);
+    }
+
+    private void findWordByEntered(long chatId, String entered) {
+        Word word = wordRepository.findByEntered(entered);
+        if(word==null) {
+            sendMessage(chatId, WORD_NOT_FOUND);
+        } else {
+            String text = "Разбор слова:\n"+
+                    "\nПриставка: " + word.getPrefix() +
+                    "\nКорень: " + word.getRoot() +
+                    "\nСуффикс: " + word.getSuffix() +
+                    "\nОкончание: " + word.getEnding() +
+                    "\nОснование: " + word.getBase();
+            sendMessage(chatId, text);
+        }
+
+        saveParseCheck(chatId, false);
+    }
+
+    private void saveParseCheck(long chatId, boolean bool) {
+        User user = userRepository.findByUserId(chatId);
+        user.setParseCheck(bool);
+        userRepository.save(user);
     }
 
     private void sendMessage(long chatId, String textToSend) {
         SendMessage message = new SendMessage();
         message.setChatId(String.valueOf(chatId));
         message.setText(textToSend);
+
+        ReplyKeyboardMarkup keyboardMarkup = new ReplyKeyboardMarkup();
+        List<KeyboardRow> keyboardRows = new ArrayList<>();
+        KeyboardRow row = new KeyboardRow();
+
+        row.add("/start");
+        row.add("/help");
+        row.add("/parse");
+        row.add("/cancel");
+
+        keyboardRows.add(row);
+        keyboardMarkup.setKeyboard(keyboardRows);
+        message.setReplyMarkup(keyboardMarkup);
         executeMessage(message);
     }
 
