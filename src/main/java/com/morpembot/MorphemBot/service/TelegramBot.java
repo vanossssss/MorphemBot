@@ -3,8 +3,8 @@ package com.morpembot.MorphemBot.service;
 import com.morpembot.MorphemBot.config.BotConfig;
 import com.morpembot.MorphemBot.dataBase.User;
 import com.morpembot.MorphemBot.dataBase.UserRepository;
-import com.morpembot.MorphemBot.dataBase.Word;
-import com.morpembot.MorphemBot.dataBase.WordRepository;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
@@ -14,6 +14,7 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMar
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -23,8 +24,6 @@ import static com.morpembot.MorphemBot.config.BotCommandText.*;
 public class TelegramBot extends TelegramLongPollingBot {
     @Autowired
     private UserRepository userRepository;
-    @Autowired
-    private WordRepository wordRepository;
     private final BotConfig config;
 
     public TelegramBot(BotConfig config) {
@@ -94,19 +93,16 @@ public class TelegramBot extends TelegramLongPollingBot {
     }
 
     private void findWordByEntered(long chatId, String entered) {
-        Word word = wordRepository.findByEntered(entered);
-        if(word==null) {
+        try {
+            String url = "https://morphemeonline.ru/" + String.valueOf(entered.charAt(0)).toUpperCase() + "/" + entered.toLowerCase();
+            Document doc = Jsoup.connect(url).get();
+            sendMessage(chatId, doc.select("body > main > p.fs-5.bg-light.d-inline-block.p-3")
+                    .first().wholeText()
+                    .replace(":\n ", ":\n\n"));
+        } catch (IOException e) {
+            System.out.println("IOException");
             sendMessage(chatId, WORD_NOT_FOUND);
-        } else {
-            String text = "Разбор слова:\n"+
-                    "\nПриставка: " + word.getPrefix() +
-                    "\nКорень: " + word.getRoot() +
-                    "\nСуффикс: " + word.getSuffix() +
-                    "\nОкончание: " + word.getEnding() +
-                    "\nОснование: " + word.getBase();
-            sendMessage(chatId, text);
         }
-
         saveParseCheck(chatId, false);
     }
 
