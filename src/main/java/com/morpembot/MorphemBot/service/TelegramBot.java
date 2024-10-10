@@ -3,8 +3,11 @@ package com.morpembot.MorphemBot.service;
 import com.morpembot.MorphemBot.config.BotConfig;
 import com.morpembot.MorphemBot.dataBase.User;
 import com.morpembot.MorphemBot.dataBase.UserRepository;
+import com.morpembot.MorphemBot.words.*;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
@@ -16,6 +19,7 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 
 import static com.morpembot.MorphemBot.config.BotCommandText.*;
@@ -94,11 +98,101 @@ public class TelegramBot extends TelegramLongPollingBot {
 
     private void findWordByEntered(long chatId, String entered) {
         try {
-            String url = "https://morphemeonline.ru/" + String.valueOf(entered.charAt(0)).toUpperCase() + "/" + entered.toLowerCase();
-            Document doc = Jsoup.connect(url).get();
-            sendMessage(chatId, doc.select("body > main > p.fs-5.bg-light.d-inline-block.p-3")
-                    .first().wholeText()
-                    .replace(":\n ", ":\n\n"));
+
+            String base;
+            String prefix = "";
+            String root = "";
+            String linking = "";
+            String suffix = "";
+            String ending = "";
+            String text;
+
+            ArrayList<WordPart> wordList = new ArrayList<>();
+
+            Document doc = Jsoup.connect("https://sinonim.org/mo/" + entered.toLowerCase()).get();
+
+            Elements baseEnding = doc.select("div.m_mor0 > span");
+            HashSet<String> checkSet = new HashSet<>();
+
+            Elements morphemClasses = doc.select("div.m_mor0 > span.m_m6 > span");
+            base = doc.select("div.m_mor0").get(0).text();
+
+            for (Element s : morphemClasses) {
+                switch (s.className()) {
+                    case "m_m0":
+                        if(!checkSet.contains(s.text())) {
+                            wordList.add(new Prefix(s.text()));
+                            checkSet.add(s.text());
+                        }
+                        break;
+                    case "m_m1":
+                        if(!checkSet.contains(s.text())) {
+                            wordList.add(new Root(s.text()));
+                            checkSet.add(s.text());
+                        }
+                        break;
+                    case "m_m2":
+                        if(!checkSet.contains(s.text())) {
+                            wordList.add(new Suffix(s.text()));
+                            checkSet.add(s.text());
+                        }
+                        break;
+                    case "m_m3":
+                        if(!checkSet.contains(s.text())) {
+                            wordList.add(new Ending(s.text()));
+                            checkSet.add(s.text());
+                        }
+                        break;
+                    case "m_m5":
+                        if(!checkSet.contains(s.text())) {
+                            wordList.add(new Linking(s.text()));
+                            checkSet.add(s.text());
+                        }
+                        break;
+                }
+            }
+
+            for (Element s : baseEnding) {
+                switch (s.className()) {
+                    case "m_m2":
+                        if (!checkSet.contains(s.text())) {
+                            wordList.add(new Suffix(s.text()));
+                            checkSet.add(s.text());
+                        }
+                        break;
+                    case "m_m3":
+                        if (!checkSet.contains(s.text())) {
+                            wordList.add(new Ending(s.text()));
+                            checkSet.add(s.text());
+                        }
+                        break;
+                }
+            }
+
+            for(WordPart wordPart: wordList) {
+                if (wordPart instanceof Prefix) {
+                    prefix += wordPart.getWordPart() + ", ";
+                } else if (wordPart instanceof Root) {
+                    root += wordPart.getWordPart() + ", ";
+                } else if (wordPart instanceof Linking) {
+                    linking += wordPart.getWordPart() + ", ";
+                } else if (wordPart instanceof Suffix) {
+                    suffix += wordPart.getWordPart() + ", ";
+                } else if (wordPart instanceof Ending) {
+                    ending += wordPart.getWordPart() + ", ";
+                }
+            }
+
+            Word word = new Word(wordList);
+
+            text = "Основа слова: " + base + "\n" +
+                    "Приставка: " + prefix + "\n" +
+                    "Корень: " + root + "\n" +
+                    "Соединительная гласная: " + linking + "\n" +
+                    "Суффикс: " + suffix + "\n" +
+                    "Окончание: " + ending + "\n";
+
+            sendMessage(chatId, text);
         } catch (IOException e) {
             System.out.println("IOException");
             sendMessage(chatId, WORD_NOT_FOUND);
